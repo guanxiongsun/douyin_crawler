@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
 
 import os
-import sys, getopt
-
+import sys
 import urllib.parse
 import urllib.request
 import copy
 import hashlib
-import codecs
 import requests
 import re
 from six.moves import queue as Queue
@@ -39,6 +37,7 @@ HEADERS = {
     'user-agent': "Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.38 (KHTML, like Gecko) Version/11.0 Mobile/15A372 Safari/604.1",
 }
 
+
 def getRemoteFileSize(url, proxy=None):
     '''
     通过content-length头获取远程文件大小
@@ -56,6 +55,7 @@ def getRemoteFileSize(url, proxy=None):
     else:
         fileSize = dict(response.headers).get('Content-Length', 0)
         return int(fileSize)
+
 
 def download(medium_type, uri, medium_url, target_folder):
     headers = copy.copy(HEADERS)
@@ -100,10 +100,10 @@ def download(medium_type, uri, medium_url, target_folder):
     time.sleep(1)
 
 
-def get_real_address(url):
-    if url.find('v.douyin.com') < 0: return url
-    res = requests.get(url, headers=HEADERS, allow_redirects=False)
-    return res.headers['Location']
+# challenge id to url
+def get_challenge_url(c_id):
+    base_url = "https://www.iesdouyin.com/share/challenge/"
+    return base_url + str(c_id)
 
 
 def get_dytk(url):
@@ -128,16 +128,22 @@ class DownloadWorker(Thread):
 
 class CrawlerScheduler(object):
 
-    def __init__(self, items):
-        self.numbers = []
+    def __init__(self, items, tags):
+        # self.numbers = []
         self.challenges = []
-        self.musics = []
+        # self.musics = []
+        self.tags = tags
         for i in range(len(items)):
-            url = get_real_address(items[i])
-            if not url: continue
-            if re.search('share/user', url): self.numbers.append(url)
-            if re.search('share/challenge', url): self.challenges.append(url)
-            if re.search('share/music', url): self.musics.append(url)
+            # url = get_real_address(items[i])  # 处理短网址
+            url = get_challenge_url(items[i])
+            # if not url:
+            #     continue
+            # if re.search('share/user', url):  # 处理用户视频
+            #    self.numbers.append(url)
+            # if re.search('share/challenge', url):  # 处理话题
+            self.challenges.append(url)
+            # if re.search('share/music', url):  # 处理音乐
+            #    self.musics.append(url)
 
         self.queue = Queue.Queue()
         self.scheduling()
@@ -160,38 +166,18 @@ class CrawlerScheduler(object):
             worker.daemon = True
             worker.start()
 
-        for url in self.numbers: self.download_user_videos(url)
-        for url in self.challenges: self.download_challenge_videos(url)
-        for url in self.musics: self.download_music_videos(url)
-
-    def download_user_videos(self, url):
-        number = re.findall(r'share/user/(\d+)', url)
-        if not len(number): return
-        dytk = get_dytk(url)
-        if not dytk: return
-        user_id = number[0]
-        video_count = self._download_user_media(user_id, dytk, url)
-        self.queue.join()
-        print("\nAweme number %s, video number %s\n\n" % (user_id, str(video_count)))
-        print("\nFinish Downloading All the videos from %s\n\n" % user_id)
+        for url in self.challenges:
+            self.download_challenge_videos(url)
 
     def download_challenge_videos(self, url):
         challenge = re.findall('share/challenge/(\d+)', url)
-        if not len(challenge): return
+        if not len(challenge):
+            return
         challenges_id = challenge[0]
         video_count = self._download_challenge_media(challenges_id, url)
         self.queue.join()
         print("\nAweme challenge #%s, video number %d\n\n" % (challenges_id, video_count))
         print("\nFinish Downloading All the videos from #%s\n\n" % challenges_id)
-
-    def download_music_videos(self, url):
-        music = re.findall('share/music/(\d+)', url)
-        if not len(music): return
-        musics_id = music[0]
-        video_count = self._download_music_media(musics_id, url)
-        self.queue.join()
-        print("\nAweme music @%s, video number %d\n\n" % (musics_id, video_count))
-        print("\nFinish Downloading All the videos from @%s\n\n" % musics_id)
 
     def _join_download_queue(self, aweme, target_folder):
         try:
@@ -257,85 +243,13 @@ class CrawlerScheduler(object):
             print("Cannot decode response data from DESC %s" % aweme['desc'])
             return
 
-    def __download_favorite_media(self, user_id, dytk, hostname, signature, favorite_folder, video_count):
-        if not os.path.exists(favorite_folder):
-            os.makedirs(favorite_folder)
-        favorite_video_url = "https://%s/aweme/v1/aweme/favorite/" % hostname
-        favorite_video_params = {
-            'user_id': str(user_id),
-            'count': '21',
-            'max_cursor': '0',
-            'aid': '1128',
-            '_signature': signature,
-            'dytk': dytk
-        }
-        max_cursor = None
-        while True:
-            if max_cursor:
-                favorite_video_params['max_cursor'] = str(max_cursor)
-            res = requests.get(favorite_video_url, headers=HEADERS, params=favorite_video_params)
-            contentJson = json.loads(res.content.decode('utf-8'))
-            favorite_list = contentJson.get('aweme_list', [])
-            for aweme in favorite_list:
-                video_count += 1
-                self._join_download_queue(aweme, favorite_folder)
-            if contentJson.get('has_more'):
-                max_cursor = contentJson.get('max_cursor')
-            else:
-                break
-        return video_count
-
-    def _download_user_media(self, user_id, dytk, url):
-        current_folder = os.getcwd()
-        target_folder = os.path.join(current_folder, 'download/%s' % user_id)
-        if not os.path.isdir(target_folder):
-            os.mkdir(target_folder)
-
-        if not user_id:
-            print("Number %s does not exist" % user_id)
-            return
-        hostname = urllib.parse.urlparse(url).hostname
-        signature = self.generateSignature(str(user_id))
-        user_video_url = "https://%s/aweme/v1/aweme/post/" % hostname
-        user_video_params = {
-            'user_id': str(user_id),
-            'count': '21',
-            'max_cursor': '0',
-            'aid': '1128',
-            '_signature': signature,
-            'dytk': dytk
-        }
-        max_cursor, video_count = None, 0
-        while True:
-            if max_cursor:
-                user_video_params['max_cursor'] = str(max_cursor)
-            res = requests.get(user_video_url, headers=HEADERS, params=user_video_params)
-            contentJson = json.loads(res.content.decode('utf-8'))
-            aweme_list = contentJson.get('aweme_list', [])
-            for aweme in aweme_list:
-                video_count += 1
-                self._join_download_queue(aweme, target_folder)
-            if contentJson.get('has_more'):
-                max_cursor = contentJson.get('max_cursor')
-            else:
-                break
-        if not noFavorite:
-            favorite_folder = target_folder + '/favorite'
-            video_count = self.__download_favorite_media(user_id, dytk, hostname, signature, favorite_folder,
-                                                         video_count)
-
-        if video_count == 0:
-            print("There's no video in number %s." % user_id)
-
-        return video_count
-
     def _download_challenge_media(self, challenge_id, url):
-
         if not challenge_id:
             print("Challenge #%s does not exist" % challenge_id)
             return
         current_folder = os.getcwd()
-        target_folder = os.path.join(current_folder, 'download/#%s' % challenge_id)
+        tag = self.tags.get(challenge_id)
+        target_folder = os.path.join(current_folder, 'download/%s_%s' % (tag, challenge_id))
         if not os.path.isdir(target_folder):
             os.mkdir(target_folder)
 
@@ -345,7 +259,7 @@ class CrawlerScheduler(object):
         challenge_video_url = "https://%s/aweme/v1/challenge/aweme/" % hostname
         challenge_video_params = {
             'ch_id': str(challenge_id),
-            'count': '9',   # 每次请求获取的视频个数 #
+            'count': '9',  # 每次请求获取的视频个数 #
             'cursor': '0',
             'aid': '1128',
             'screen_limit': '3',
@@ -358,7 +272,7 @@ class CrawlerScheduler(object):
             if cursor:
                 challenge_video_params['cursor'] = str(cursor)
                 challenge_video_params['_signature'] = self.generateSignature(str(challenge_id) + '9' + str(cursor))
-            res = requests.get(challenge_video_url, headers=HEADERS,params=challenge_video_params)
+            res = requests.get(challenge_video_url, headers=HEADERS, params=challenge_video_params)
             try:
                 contentJson = json.loads(res.content.decode('utf-8'))
             except:
@@ -387,84 +301,22 @@ class CrawlerScheduler(object):
             print("There's no video in challenge %s." % challenge_id)
         return video_count
 
-    def _download_music_media(self, music_id, url):
-        if not music_id:
-            print("Challenge #%s does not exist" % music_id)
-            return
-        current_folder = os.getcwd()
-        target_folder = os.path.join(current_folder, 'download/@%s' % music_id)
-        if not os.path.isdir(target_folder):
-            os.mkdir(target_folder)
-
-        hostname = urllib.parse.urlparse(url).hostname
-        signature = self.generateSignature(str(music_id))
-        music_video_url = "https://%s/aweme/v1/music/aweme/?{0}" % hostname
-        music_video_params = {
-            'music_id': str(music_id),
-            'count': '9',
-            'cursor': '0',
-            'aid': '1128',
-            'screen_limit': '3',
-            'download_click_limit': '0',
-            '_signature': signature
-        }
-        if hostname == 't.tiktok.com':
-            for key in ['screen_limit', 'download_click_limit', '_signature']: music_video_params.pop(key)
-            music_video_params['aid'] = '1180'
-
-        cursor, video_count = None, 0
-        while True:
-            if cursor:
-                music_video_params['cursor'] = str(cursor)
-                music_video_params['_signature'] = self.generateSignature(str(music_id) + '9' + str(cursor))
-
-            url = music_video_url.format(
-                '&'.join([key + '=' + music_video_params[key] for key in music_video_params]))
-            res = requests.get(url, headers=HEADERS)
-            contentJson = json.loads(res.content.decode('utf-8'))
-            aweme_list = contentJson.get('aweme_list', [])
-            if not aweme_list: break
-            for aweme in aweme_list:
-                aweme['hostname'] = hostname
-                video_count += 1
-                self._join_download_queue(aweme, target_folder)
-            if contentJson.get('has_more'):
-                cursor = contentJson.get('cursor')
-            else:
-                break
-        if video_count == 0:
-            print("There's no video in music %s." % music_id)
-        return video_count
-
 
 def usage():
-    print("1. Please create file share-url.txt under this same directory.\n"
-          "2. In share-url.txt, you can specify amemv share page url separated by "
-          "comma/space/tab/CR. Accept multiple lines of text\n"
-          "3. Save the file and retry.\n\n"
-          "Sample File Content:\nurl1,url2\n\n"
-          "Or use command line options:\n\n"
-          "Sample:\npython amemv-video-ripper.py number1,number2\n\n\n")
-    print(u"未找到share-url.txt文件，请创建.\n"
-          u"请在文件中指定抖音分享页面URL，并以 逗号/空格/tab/表格鍵/回车符 分割，支持多行.\n"
-          u"保存文件并重试.\n\n"
-          u"例子: url1,url12\n\n"
-          u"或者直接使用命令行参数指定站点\n"
-          u"例子: python amemv-video-ripper.py url1,url2")
+    print(u"编辑tag-url.json文件.\n"
+          u"要求每个item具有tag和cid两个字段:\n"
+          u"例如：tag: 风景, cid: 1562172675762177 ...\n")
 
 
 def parse_sites(fileName):
+    tags = dict()
+    c_ids = list()
     with open(fileName, "rb") as f:
-        txt = f.read().rstrip().lstrip()
-        txt = codecs.decode(txt, 'utf-8')
-        txt = txt.replace("\t", ",").replace("\r", ",").replace("\n", ",").replace(" ", ",")
-        txt = txt.split(",")
-    numbers = list()
-    for raw_site in txt:
-        site = raw_site.lstrip().rstrip()
-        if site:
-            numbers.append(site)
-    return numbers
+        data = json.load(f)['tags_urls_list']
+        for item in data:
+            tags[item['cid']] = item['tag']
+            c_ids.append(item['cid'])
+    return tags, c_ids
 
 
 noFavorite = False
@@ -472,32 +324,12 @@ noFavorite = False
 if __name__ == "__main__":
     content, opts, args = None, None, []
 
-    try:
-        if len(sys.argv) >= 2:
-            opts, args = getopt.getopt(sys.argv[1:], "hi:o:", ["no-favorite"])
-    except getopt.GetoptError as err:
-        usage()
-        sys.exit(2)
-
-    if not args:
-        # check the sites file
-        filename = "share-url.txt"
-        if os.path.exists(filename):
-            content = parse_sites(filename)
-        else:
-            usage()
-            sys.exit(1)
+    # check the sites file
+    filename = "tag-url.json"
+    if os.path.exists(filename):
+        Tags, C_ids = parse_sites(filename)
     else:
-        content = (args[0] if args else '').split(",")
-
-    if len(content) == 0 or content[0] == "":
         usage()
         sys.exit(1)
 
-    if opts:
-        for o, val in opts:
-            if o in ("-nf", "--no-favorite"):
-                noFavorite = True
-                break
-
-    CrawlerScheduler(content)
+    CrawlerScheduler(C_ids, Tags)
