@@ -150,7 +150,7 @@ class CrawlerScheduler(object):
 
     @staticmethod
     def generateSignature(value):
-        p = os.popen('/usr/local/bin/node fuck-byted-acrawler.js %s' % value)
+        p = os.popen('node fuck-byted-acrawler.js %s' % value)
         return p.readlines()[0]
 
     @staticmethod
