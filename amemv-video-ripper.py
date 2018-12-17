@@ -312,7 +312,7 @@ def parse_sites(fileName):
     tags = dict()
     c_ids = list()
     with open(fileName, "rb") as f:
-        _data_ = json.load(f)
+        _data = json.load(f)
         data = _data['tags_urls_list']
         for item in data:
             tags[item['cid']] = item['tag']
