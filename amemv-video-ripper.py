@@ -26,7 +26,7 @@ TIMEOUT = 10
 RETRY = 5
 
 # Numbers of downloading threads concurrently
-THREADS = 10
+THREADS = 1
 
 HEADERS = {
     'accept-encoding': 'gzip, deflate, br',
@@ -315,8 +315,10 @@ def parse_sites(fileName):
         _data = json.load(f)
         data = _data['tags_urls_list']
         for item in data:
-            tags[item['cid']] = item['tag']
-            c_ids.append(item['cid'])
+            c_id = str(item['cid'])
+            tag = str(item['tag'])
+            tags[c_id] = tag
+            c_ids.append(c_id)
     return tags, c_ids
 
 
