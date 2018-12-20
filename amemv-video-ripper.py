@@ -26,7 +26,7 @@ TIMEOUT = 10
 RETRY = 5
 
 # Numbers of downloading threads concurrently
-THREADS = 1
+THREADS = 10
 
 HEADERS = {
     'accept-encoding': 'gzip, deflate, br',
