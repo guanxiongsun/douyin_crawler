@@ -17,7 +17,7 @@ import time
 添加MAX_VIDEOS变量控制下载视频个数
 """
 # Setting max number of videos
-MAX_VIDEOS = 20
+MAX_VIDEOS = 5000
 
 # Setting timeout
 TIMEOUT = 10
@@ -150,7 +150,7 @@ class CrawlerScheduler(object):
 
     @staticmethod
     def generateSignature(value):
-        p = os.popen('/usr/local/bin/node fuck-byted-acrawler.js %s' % value)
+        p = os.popen('node fuck-byted-acrawler.js %s' % value)
         return p.readlines()[0]
 
     @staticmethod
@@ -335,4 +335,5 @@ if __name__ == "__main__":
         usage()
         sys.exit(1)
 
+    print (Tags)
     CrawlerScheduler(C_ids, Tags)
