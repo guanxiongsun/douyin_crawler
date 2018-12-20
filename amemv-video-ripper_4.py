@@ -328,7 +328,7 @@ if __name__ == "__main__":
     content, opts, args = None, None, []
 
     # check the sites file
-    filename = "tag-url_3.json"
+    filename = "tag-url_4.json"
     if os.path.exists(filename):
         Tags, C_ids = parse_sites(filename)
     else:
