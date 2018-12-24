@@ -17,13 +17,13 @@ import time
 添加MAX_VIDEOS变量控制下载视频个数
 """
 # Setting max number of videos
-MAX_VIDEOS = 5000
+MAX_VIDEOS = 1500
 
 # Setting timeout
 TIMEOUT = 10
 
 # Retry times
-RETRY = 5
+RETRY = 3
 
 # Numbers of downloading threads concurrently
 THREADS = 1
@@ -74,8 +74,9 @@ def download(medium_type, uri, medium_url, target_folder):
         remoteSize = getRemoteFileSize(medium_url)
         localSize = os.path.getsize(file_path)
         if remoteSize == localSize:
+            print("existedd!!!")
             return
-    print("Downloading %s from %s.\n" % (file_name, medium_url))
+    print("Downloading %s from %s.\n" % (file_name, target_folder))
     retry_times = 0
     while retry_times < RETRY:
         try:
@@ -96,7 +97,7 @@ def download(medium_type, uri, medium_url, target_folder):
             os.remove(file_path)
         except OSError:
             pass
-        print("Failed to retrieve %s from %s.\n" % medium_url)
+        print("Failed to retrieve from %s.\n" % medium_url)
     time.sleep(1)
 
 
